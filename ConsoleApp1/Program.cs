@@ -28,10 +28,13 @@ namespace ConsoleApp1
                     {
                         options.SocketSettings.Address = "localhost";
                         options.SocketSettings.Port = 11000;
-                        options.MetricsOutputFormatter = new MyOutputFormatter()
-                        {
-                           
-                        };
+                        options.MetricsOutputFormatter = new MyOutputFormatter(new MetricsTextOptions() 
+                                                                    { 
+                                                                        Encoding = System.Text.Encoding.UTF8,
+                                                                        MetricNameFormatter= (metricContext, metricName) => metricName,
+                                                                        Padding=0,
+                                                                        Separator="",
+                                                                    });
                         //options.Filter = filter;
                         //options.FlushInterval = TimeSpan.FromSeconds(config.Value.FlushIntervalInSeconds);
                         options.SocketPolicy = new SocketPolicy();
@@ -80,6 +83,19 @@ namespace ConsoleApp1
     internal class MyOutputFormatter : IMetricsOutputFormatter
     {
         private readonly MetricsTextOptions _options;
+
+        public MyOutputFormatter(MetricsTextOptions options)
+        {
+            _options = options ?? throw new ArgumentNullException(nameof(options));
+            MetricFields = new MetricFields();
+        }
+
+        public MyOutputFormatter()
+        {
+            _options = new MetricsTextOptions();
+            MetricFields = new MetricFields();
+        }
+
         /// <inheritdoc />
         public MetricsMediaTypeValue MediaType => new MetricsMediaTypeValue("text", "vnd.appmetrics.metrics", "v1", "plain");
 
@@ -99,17 +115,13 @@ namespace ConsoleApp1
 
             var serializer = new MetricSnapshotSerializer();
 
-            using var streamWriter = new StreamWriter(output, System.Text.Encoding.UTF8, bufferSize: 1024, leaveOpen: true);
-
+            using var streamWriter = new StreamWriter(output, _options.Encoding, bufferSize: 1024, leaveOpen: true);
+            
             using var textWriter = new MetricSnapshotTextWriter2(
                 streamWriter,
-                " ",
-                10,
-                (metricContext, metricName) => {
-                    return string.IsNullOrWhiteSpace(metricContext)
-                    ? metricName
-                    : $"[{metricContext}] {metricName}";
-                });
+                _options.Separator,
+                _options.Padding,
+                _options.MetricNameFormatter);
 
             serializer.Serialize(textWriter, metricsData, MetricFields);
             await Task.CompletedTask; 
@@ -261,9 +273,12 @@ namespace ConsoleApp1
             await textWriter.WriteAsync(Measurement); await textWriter.WriteAsync(' ');
             
             await textWriter.WriteAsync(Fields.Select(k => k.Value).FirstOrDefault().ToString()); await textWriter.WriteAsync(' ');
+            
+            await textWriter.WriteAsync(_timestamp.Ticks.ToString()); await textWriter.WriteAsync(' ');
+
             await textWriter.WriteAsync(Tags.Values.FirstOrDefault().ToString());
 
-            await textWriter.WriteAsync(_timestamp.Ticks.ToString()); await textWriter.WriteAsync(' ');
+            
 
             await textWriter.WriteAsync('\n');
 
